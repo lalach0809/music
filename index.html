@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>카페 주크박스 - 매장용 재생 플레이어</title>
+  <title>카페 주크박스 - 투표형 소셜 플레이어</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @keyframes pulse-subtle {
@@ -32,7 +32,7 @@
 </head>
 <body class="bg-stone-900 text-stone-100 min-h-screen flex flex-col items-center p-4 select-none">
 
-  <!-- [초기 오디오 언락 모달] 브라우저 소리 재생 허용 -->
+  <!-- [초기 오디오 언락 모달] -->
   <div id="startOverlay" class="fixed inset-0 bg-stone-950/95 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center">
     <div class="max-w-md bg-stone-900 border border-stone-700 p-8 rounded-2xl shadow-2xl">
       <div class="w-16 h-16 bg-amber-600/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
@@ -54,7 +54,7 @@
       <span class="text-3xl">☕</span>
       <div>
         <h1 class="text-2xl font-bold tracking-tight text-amber-500">CAFE JUKEBOX</h1>
-        <p class="text-xs text-stone-400">구글 시트 연동 · 실시간 대기열 & 선택 재생</p>
+        <p class="text-xs text-stone-400">구글 시트 연동 · 실시간 투표(좋아요/싫어요) 주크박스</p>
       </div>
     </div>
     <div class="flex items-center gap-3">
@@ -109,7 +109,7 @@
           <span>🎶</span> 손님 음악 등록
         </h3>
         <form onsubmit="submitSong(event)" class="space-y-3">
-          <input type="text" id="reqName" placeholder="신청자명 또는 테이블 번호 (예: 3번 테이블)" 
+          <input type="text" id="reqName" placeholder="신청자명 또는 테이블 번호 (예: 5번 테이블)" 
                  class="w-full bg-stone-900 border border-stone-700 text-sm rounded-lg px-3 py-2 text-white placeholder-stone-500 focus:outline-none focus:border-amber-500">
           <input type="url" id="reqUrl" placeholder="유튜브 링크 (youtube.com... 또는 youtu.be...)" required 
                  class="w-full bg-stone-900 border border-stone-700 text-sm rounded-lg px-3 py-2 text-white placeholder-stone-500 focus:outline-none focus:border-amber-500">
@@ -119,11 +119,11 @@
         </form>
       </div>
 
-      <!-- 플레이리스트 -->
-      <div class="bg-stone-800/80 p-5 rounded-2xl border border-stone-700/60 shadow-xl flex-1 flex flex-col min-h-[300px]">
+      <!-- 플레이리스트 (투표 기능 포함) -->
+      <div class="bg-stone-800/80 p-5 rounded-2xl border border-stone-700/60 shadow-xl flex-1 flex flex-col min-h-[340px]">
         <div class="flex flex-wrap justify-between items-center pb-3 border-b border-stone-700/60 gap-2 mb-3">
           <div>
-            <h3 class="text-sm font-bold text-stone-200">신청곡 목록 및 현황</h3>
+            <h3 class="text-sm font-bold text-stone-200">신청곡 목록 및 실시간 투표</h3>
             <p class="text-[11px] text-stone-400 mt-0.5">
               총 남은 대기 시간: <span id="totalDurationText" class="text-amber-400 font-semibold">0분 00초</span>
             </p>
@@ -134,17 +134,12 @@
           </div>
         </div>
 
-        <ul id="trackList" class="space-y-2.5 max-h-72 overflow-y-auto text-xs text-stone-300 flex-1 pr-1">
+        <ul id="trackList" class="space-y-2.5 max-h-80 overflow-y-auto text-xs text-stone-300 flex-1 pr-1">
           <li class="p-4 text-stone-500 text-center">등록된 신청곡이 없습니다.</li>
         </ul>
       </div>
     </section>
   </main>
-
-  <!-- 메타데이터(재생시간) 추출용 숨김 플레이어 -->
-  <div class="h-0 w-0 overflow-hidden opacity-0 pointer-events-none">
-    <div id="metaPlayer"></div>
-  </div>
 
   <!-- 관리자 모달 -->
   <div id="adminModal" class="fixed inset-0 bg-stone-950/80 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
@@ -160,24 +155,20 @@
   </div>
 
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqwrYao138Va7-MgMil9bXM5TGJ64jmGsoWWUIGJU_-Afn2zO4PWh8k4q0SfyB8Gxx/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzEPjcNDYoVil3KCtc9VAomZ64CEHtRht0L0Qy-O24mo1nG9Uuuoxg-P4T8hlbAn4Fz/exec";
     let defaultVideoId = localStorage.getItem('cafe_default_bgm') || "jfKfPfyJRdk";
 
     let player = null;
-    let metaPlayer = null;
     let rawTracks = [];
     let currentPlaying = null;
-    
-    // 캐시 저장소: { [videoId]: { title: string, duration: number } }
     const videoMetaCache = {};
 
-    // 유튜브 API 로드
+    // 유튜브 API 비동기 주입
     const tag = document.createElement('script');
     tag.src = "https://www.youtube.com/iframe_api";
     document.head.appendChild(tag);
 
     function onYouTubeIframeAPIReady() {
-      // 메인 재생 플레이어
       player = new YT.Player('player', {
         height: '100%',
         width: '100%',
@@ -190,16 +181,6 @@
         },
         events: {
           'onStateChange': onPlayerStateChange
-        }
-      });
-
-      // 메타데이터(정확한 길이) 백그라운드 측정용 무음 플레이어
-      metaPlayer = new YT.Player('metaPlayer', {
-        height: '100',
-        width: '100',
-        playerVars: { 'autoplay': 0, 'controls': 0 },
-        events: {
-          'onReady': () => { metaPlayer.mute(); }
         }
       });
     }
@@ -256,32 +237,25 @@
       return `${minutes}분 ${seconds.toString().padStart(2, '0')}초`;
     }
 
-    // 유튜브 제목 및 길이 비동기 추출 & 캐싱
     async function fetchVideoMeta(videoId) {
-      if (!videoId) return { title: '알 수 없는 음악', duration: 0 };
+      if (!videoId) return { title: '알 수 없는 음악', duration: 210 };
       if (videoMetaCache[videoId]) return videoMetaCache[videoId];
 
       let title = '신청된 유튜브 음악';
-      let duration = 0;
-
       try {
-        // oEmbed API로 정확한 영상 제목 추출 (API 키 불필요)
         const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
         const data = await res.json();
         if (data && data.title) {
           title = data.title;
         }
       } catch (e) {
-        console.error("제목 추출 실패:", e);
+        console.error("제목 조회 실패:", e);
       }
 
-      // 기본 러닝타임 추정치(3분 30초 = 210초) 할당 후 캐싱
-      duration = 210;
-      videoMetaCache[videoId] = { title, duration };
+      videoMetaCache[videoId] = { title, duration: 210 };
       return videoMetaCache[videoId];
     }
 
-    // 시트에서 목록 가져오기
     async function fetchSheetData() {
       if (!SCRIPT_URL) return;
       try {
@@ -290,16 +264,57 @@
         rawTracks = data.tracks || [];
         await renderTracksUI();
 
+        // 현재 곡에 싫어요가 5개 이상이면 자동 스킵
+        if (currentPlaying && !currentPlaying.isDefault) {
+          const liveTrack = rawTracks.find(t => t.rowIndex === currentPlaying.rowIndex);
+          if (liveTrack && liveTrack.dislikes >= 5) {
+            alert(`[자동 스킵] "${liveTrack.name}" 님의 신청곡이 비추천 5개에 도달하여 다음 곡으로 전환됩니다.`);
+            skipSong();
+            return;
+          }
+        }
+
         const pendingQueue = rawTracks.filter(t => t.status === '대기');
         if (currentPlaying && currentPlaying.isDefault && pendingQueue.length > 0) {
           playNext();
         }
       } catch (err) {
-        console.error("데이터 동기화 실패:", err);
+        console.error("동기화 실패:", err);
       }
     }
 
-    // 재생목록 렌더링
+    // 좋아요 / 싫어요 투표 처리 함수
+    async function voteTrack(rowIndex, voteType) {
+      const voteKey = `voted_${rowIndex}`;
+      if (localStorage.getItem(voteKey)) {
+        alert("이 곡에는 이미 투표하셨습니다.");
+        return;
+      }
+
+      // UI 낙관적 업데이트
+      const target = rawTracks.find(t => t.rowIndex === rowIndex);
+      if (target) {
+        if (voteType === 'like') target.likes = (target.likes || 0) + 1;
+        if (voteType === 'dislike') target.dislikes = (target.dislikes || 0) + 1;
+        localStorage.setItem(voteKey, voteType);
+        renderTracksUI();
+      }
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'vote',
+            rowIndex: rowIndex,
+            voteType: voteType
+          })
+        });
+        fetchSheetData();
+      } catch (err) {
+        console.error("투표 요청 실패:", err);
+      }
+    }
+
     async function renderTracksUI() {
       const trackList = document.getElementById('trackList');
       const queueBadge = document.getElementById('queueBadge');
@@ -318,14 +333,12 @@
         return;
       }
 
-      // 메타데이터 비동기 로드
       const enrichedTracks = await Promise.all(rawTracks.map(async (track) => {
         const vid = extractVideoId(track.url);
         const meta = await fetchVideoMeta(vid);
         return { ...track, vid, title: meta.title, duration: meta.duration };
       }));
 
-      // 총 대기시간 합산
       const totalSeconds = enrichedTracks
         .filter(t => t.status === '대기')
         .reduce((sum, item) => sum + (item.duration || 0), 0);
@@ -335,11 +348,27 @@
 
       enrichedTracks.forEach((track, idx) => {
         const isPlayingNow = currentPlaying && !currentPlaying.isDefault && currentPlaying.rowIndex === track.rowIndex;
+        const votedType = localStorage.getItem(`voted_${track.rowIndex}`);
+
+        // 좋아요/싫어요 투표 버튼 컴포넌트
+        const voteButtonsHtml = `
+          <div class="flex items-center gap-1 bg-stone-950/60 p-1 rounded-lg border border-stone-800">
+            <button onclick="voteTrack(${track.rowIndex}, 'like')" 
+                    class="px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition ${votedType === 'like' ? 'bg-amber-600 text-white' : 'hover:bg-stone-800 text-emerald-400'}">
+              👍 <span>${track.likes || 0}</span>
+            </button>
+            <span class="text-stone-700 text-[10px]">|</span>
+            <button onclick="voteTrack(${track.rowIndex}, 'dislike')" 
+                    class="px-2 py-0.5 rounded text-[11px] font-medium flex items-center gap-1 transition ${votedType === 'dislike' ? 'bg-red-800 text-white' : 'hover:bg-stone-800 text-rose-400'}">
+              👎 <span>${track.dislikes || 0}</span>
+            </button>
+          </div>
+        `;
 
         if (isPlayingNow) {
-          // [재생중]
+          // [재생중] 카드
           html += `
-            <li class="playing-card flex items-center justify-between p-3 bg-amber-950/40 rounded-xl border-2 border-amber-500 shadow-lg">
+            <li class="playing-card flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-amber-950/40 rounded-xl border-2 border-amber-500 gap-2 shadow-lg">
               <div class="flex items-center gap-2.5 overflow-hidden flex-1 mr-2">
                 <div class="flex items-end h-3.5 flex-shrink-0">
                   <span class="bar"></span>
@@ -352,15 +381,18 @@
                   <p class="text-[10px] text-stone-400 mt-0.5 truncate">신청: ${track.name} · <span class="font-mono text-amber-400/90">${formatTime(track.duration)}</span></p>
                 </div>
               </div>
-              <span class="text-[10px] bg-amber-500 text-stone-950 font-bold px-2.5 py-1 rounded-full shadow flex-shrink-0">
-                ▶ 재생중
-              </span>
+              <div class="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0">
+                ${voteButtonsHtml}
+                <span class="text-[10px] bg-amber-500 text-stone-950 font-bold px-2 py-1 rounded-full shadow">
+                  ▶ 재생중
+                </span>
+              </div>
             </li>
           `;
         } else if (track.status === '대기') {
-          // [대기중] - 관리자 선택 재생 버튼 추가
+          // [대기중] 카드
           html += `
-            <li class="flex items-center justify-between p-2.5 bg-stone-900/80 rounded-xl border border-stone-800 hover:border-stone-700 transition">
+            <li class="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 bg-stone-900/80 rounded-xl border border-stone-800 hover:border-stone-700 gap-2 transition">
               <div class="flex items-center gap-2 overflow-hidden flex-1 mr-2">
                 <span class="font-bold text-amber-400 text-xs w-4 flex-shrink-0">${idx + 1}</span>
                 <div class="truncate">
@@ -368,7 +400,8 @@
                   <p class="text-[10px] text-stone-500 truncate">신청: ${track.name} · <span class="font-mono text-stone-400">${formatTime(track.duration)}</span></p>
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 flex-shrink-0">
+              <div class="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0">
+                ${voteButtonsHtml}
                 <button onclick="playSelectedSong(${track.rowIndex})" class="text-[10px] bg-stone-800 hover:bg-amber-600 hover:text-white text-stone-300 border border-stone-600 px-2.5 py-1 rounded-lg font-medium transition active:scale-95">
                   ▶ 재생
                 </button>
@@ -376,9 +409,9 @@
             </li>
           `;
         } else {
-          // [재생완료] 히스토리
+          // [재생완료] 히스토리 카드
           html += `
-            <li class="flex items-center justify-between p-2 bg-stone-900/30 rounded-xl border border-stone-800/40 opacity-45">
+            <li class="flex flex-col sm:flex-row sm:items-center justify-between p-2 bg-stone-900/30 rounded-xl border border-stone-800/40 opacity-50 gap-2">
               <div class="flex items-center gap-2 overflow-hidden flex-1 mr-2">
                 <span class="text-stone-600 text-xs w-4 flex-shrink-0">✓</span>
                 <div class="truncate">
@@ -386,9 +419,12 @@
                   <p class="text-[10px] text-stone-600 truncate">신청: ${track.name} · <span class="font-mono">${formatTime(track.duration)}</span></p>
                 </div>
               </div>
-              <span class="text-[10px] bg-stone-800/40 text-stone-500 px-2 py-0.5 rounded flex-shrink-0">
-                완료
-              </span>
+              <div class="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0">
+                ${voteButtonsHtml}
+                <span class="text-[10px] bg-stone-800/40 text-stone-500 px-2 py-0.5 rounded">
+                  완료
+                </span>
+              </div>
             </li>
           `;
         }
@@ -397,7 +433,6 @@
       trackList.innerHTML = html;
     }
 
-    // 관리자가 특정 곡을 직접 선택하여 즉시 재생하는 기능
     async function playSelectedSong(targetRowIndex) {
       const selectedTrack = rawTracks.find(t => t.rowIndex === targetRowIndex);
       if (!selectedTrack) return;
@@ -405,7 +440,6 @@
       const videoId = extractVideoId(selectedTrack.url);
       if (!videoId) return;
 
-      // 이전 재생곡이 손님 신청곡이었다면 완료 처리
       if (currentPlaying && !currentPlaying.isDefault && currentPlaying.rowIndex) {
         updateSheetStatus(currentPlaying.rowIndex, '재생완료');
         currentPlaying.status = '재생완료';
@@ -428,12 +462,10 @@
 
     function playNext() {
       const pendingQueue = rawTracks.filter(t => t.status === '대기');
-
       if (pendingQueue.length > 0) {
         playSelectedSong(pendingQueue[0].rowIndex);
         return;
       }
-
       playDefaultMusic();
     }
 
